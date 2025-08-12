@@ -1,0 +1,36 @@
+name: 📦 Request LADB APK Build
+description: Get the latest LADB APK automatically built and ready to download
+title: "Build Latest LADB APK"
+labels: ["build-request"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 📦 Request a Fresh LADB APK
+
+        Submitting this issue will **automatically build and publish** the newest LADB APK from the official open-source code.
+
+        **ℹ️ How it works:**
+        - Checks the official [tytydraco/LADB](https://github.com/tytydraco/LADB) repository for the latest version
+        - Builds the APK securely
+        - Uploads it as a GitHub Release
+        - Shares the download link in the comments
+
+        **✅ No coding required** — just click **Create** below.
+
+        ---
+        ⚠️ **Important Notes**
+        - Only use this for requesting a **newer version** if one exists.
+        - If the latest version is already available, no new build will be created.
+        - This process is automated and safe.
+
+  - type: input
+    id: confirm
+    attributes:
+      label: Confirmation
+      description: Leave this as is — it’s required for the request to run.
+      value: "Build request confirmed"
+    validations:
+      required: true

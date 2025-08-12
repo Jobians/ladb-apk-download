@@ -1,0 +1,146 @@
+name: 📦 Build LADB APK
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  build:
+    if: contains(github.event.issue.labels.*.name, 'build-request')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      issues: write
+
+    steps:
+    - name: "📝 Notify: Build Started"
+      uses: peter-evans/create-or-update-comment@v2
+      with:
+        issue-number: ${{ github.event.issue.number }}
+        body: |
+          🚧 Building the latest LADB APK... please wait.
+
+    - name: 📥 Clone LADB Source
+      run: git clone https://github.com/tytydraco/LADB.git
+
+    - name: 🔍 Detect Version & Commit
+      id: detect_version
+      run: |
+        cd LADB
+        LATEST_COMMIT=$(git log --grep="Update version code" -1 --format="%H")
+        echo "commit=$LATEST_COMMIT" >> $GITHUB_OUTPUT
+
+        SHORT_HASH=$(echo $LATEST_COMMIT | cut -c1-7)
+        echo "short_hash=$SHORT_HASH" >> $GITHUB_OUTPUT
+
+        VERSION_NAME=$(grep 'versionName ' app/build.gradle | head -n1 | sed -E 's/.*versionName "([^"]+)".*/\1/')
+        echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+        echo "tag_name=v$VERSION_NAME" >> $GITHUB_OUTPUT
+
+    - name: 🔎 Check Existing Release
+      id: check_release
+      run: |
+        TAG=${{ steps.detect_version.outputs.tag_name }}
+        if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: "ℹ️ Notify: Already Released"
+      if: steps.check_release.outputs.exists == 'true'
+      uses: peter-evans/create-or-update-comment@v2
+      with:
+        issue-number: ${{ github.event.issue.number }}
+        body: |
+          ⚠️ **${{ steps.detect_version.outputs.tag_name }}** is already available.
+
+          📥 [Download here](https://github.com/${{ github.repository }}/releases/tag/${{ steps.detect_version.outputs.tag_name }})
+
+          Closing this request.
+    - name: 🚪 Close Issue (Already Released)
+      if: steps.check_release.outputs.exists == 'true'
+      uses: peter-evans/close-issue@v3
+      with:
+        issue-number: ${{ github.event.issue.number }}
+
+    - name: ☕ Setup Java 17
+      if: steps.check_release.outputs.exists == 'false'
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: 🔑 Restore Keystore
+      if: steps.check_release.outputs.exists == 'false'
+      run: |
+        mkdir -p LADB/app
+        echo "$KEYSTORE_FILE" | base64 --decode > LADB/app/ladb-apk-release-key.jks
+      env:
+        KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
+
+    - name: 🏗 Build Signed APK
+      if: steps.check_release.outputs.exists == 'false'
+      run: |
+        cd LADB
+        chmod +x ./gradlew
+        ./gradlew assembleRelease \
+          -PRELEASE_ANTIPIRACY=false \
+          -Pandroid.injected.signing.store.file=$(pwd)/app/ladb-apk-release-key.jks \
+          -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
+          -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+          -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+
+    - name: 🏷 Rename APK
+      if: steps.check_release.outputs.exists == 'false'
+      run: |
+        VERSION=${{ steps.detect_version.outputs.version_name }}
+        mv LADB/app/build/outputs/apk/release/app-release.apk \
+           LADB/app/build/outputs/apk/release/LADB-v$VERSION.apk
+
+    - name: 🚀 Publish Release
+      if: steps.check_release.outputs.exists == 'false'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.detect_version.outputs.tag_name }}
+        name: LADB v${{ steps.detect_version.outputs.version_name }}
+        body: |
+          📦 Built from commit: [${{ steps.detect_version.outputs.commit }}](https://github.com/tytydraco/LADB/commit/${{ steps.detect_version.outputs.commit }})
+
+          ### How to Install:
+          1. Download the APK below.
+          2. Enable installation from unknown sources on your device.
+          3. If Play Protect warns you, tap **Scan**, wait, then proceed.
+
+        files: LADB/app/build/outputs/apk/release/LADB-v${{ steps.detect_version.outputs.version_name }}.apk
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: "✅ Notify: Build Completed"
+      if: success() && steps.check_release.outputs.exists == 'false'
+      uses: peter-evans/create-or-update-comment@v2
+      with:
+        issue-number: ${{ github.event.issue.number }}
+        body: |
+          ✅ Build complete!
+
+          📥 [Download LADB v${{ steps.detect_version.outputs.version_name }}](https://github.com/${{ github.repository }}/releases/tag/${{ steps.detect_version.outputs.tag_name }})
+
+          Closing this request.
+
+    - name: 🚪 Close Issue (Success)
+      if: success() && steps.check_release.outputs.exists == 'false'
+      uses: peter-evans/close-issue@v3
+      with:
+        issue-number: ${{ github.event.issue.number }}
+
+    - name: "❌ Notify: Build Failed"
+      if: failure()
+      uses: peter-evans/create-or-update-comment@v2
+      with:
+        issue-number: ${{ github.event.issue.number }}
+        body: |
+          ❌ Build failed. Please check the workflow logs for details.
