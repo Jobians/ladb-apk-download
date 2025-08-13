@@ -1,0 +1,28 @@
+name: 🗓 Monthly LADB Build Check
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'  # Runs at 00:00 UTC on the 1st of every month
+  # workflow_dispatch:
+
+jobs:
+  create-build-issue:
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+
+    steps:
+      - name: Set issue title with month
+        id: title
+        run: |
+          TITLE="🗓 Monthly LADB Build Check - $(date +'%B %Y')"
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+
+      - name: Create LADB Build Issue
+        uses: dacbd/create-issue-action@main
+        with:
+          title: ${{ steps.title.outputs.title }}
+          labels: build-request
+          body: This issue was automatically created to check for a new LADB version and trigger a build if needed.
+          token: ${{ secrets.GITHUB_TOKEN }}
